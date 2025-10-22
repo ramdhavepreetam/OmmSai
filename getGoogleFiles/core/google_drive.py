@@ -5,6 +5,8 @@ Handles authentication, file listing, and downloading
 import os
 import pickle
 import io
+import threading
+import time
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -20,43 +22,66 @@ class GoogleDriveService:
     def __init__(self):
         self.service = None
         self.authenticated = False
+        self.credentials = None
+        # Lock for thread-safe service access
+        self._service_lock = threading.Lock()
+        # Thread-local storage for per-thread service instances
+        self._thread_local = threading.local()
 
     def authenticate(self):
         """
         Authenticate with Google Drive using OAuth 2.0
         Returns True if successful, False otherwise
         """
-        creds = None
+        with self._service_lock:
+            creds = None
 
-        # Load existing credentials
-        if os.path.exists(Settings.TOKEN_FILE):
-            with open(Settings.TOKEN_FILE, 'rb') as token:
-                creds = pickle.load(token)
+            # Load existing credentials
+            if os.path.exists(Settings.TOKEN_FILE):
+                with open(Settings.TOKEN_FILE, 'rb') as token:
+                    creds = pickle.load(token)
 
-        # Refresh or create new credentials
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(Settings.CREDENTIALS_FILE):
-                    raise FileNotFoundError(
-                        f"{Settings.CREDENTIALS_FILE} not found! "
-                        "Please download OAuth credentials from Google Cloud Console."
+            # Refresh or create new credentials
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    if not os.path.exists(Settings.CREDENTIALS_FILE):
+                        raise FileNotFoundError(
+                            f"{Settings.CREDENTIALS_FILE} not found! "
+                            "Please download OAuth credentials from Google Cloud Console."
+                        )
+
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        Settings.CREDENTIALS_FILE, Settings.SCOPES
                     )
+                    creds = flow.run_local_server(port=0)
 
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    Settings.CREDENTIALS_FILE, Settings.SCOPES
-                )
-                creds = flow.run_local_server(port=0)
+                # Save credentials for future use
+                with open(Settings.TOKEN_FILE, 'wb') as token:
+                    pickle.dump(creds, token)
 
-            # Save credentials for future use
-            with open(Settings.TOKEN_FILE, 'wb') as token:
-                pickle.dump(creds, token)
+            # Store credentials for thread-local service creation
+            self.credentials = creds
+            # Build main service
+            self.service = build('drive', 'v3', credentials=creds)
+            self.authenticated = True
+            return True
 
-        # Build service
-        self.service = build('drive', 'v3', credentials=creds)
-        self.authenticated = True
-        return True
+    def _get_service(self):
+        """
+        Get thread-local service instance
+        This prevents SSL errors when using multiple threads
+        """
+        if not self.authenticated:
+            raise RuntimeError("Not authenticated. Call authenticate() first.")
+
+        # Check if this thread already has a service instance
+        if not hasattr(self._thread_local, 'service'):
+            # Create a new service instance for this thread
+            self._thread_local.service = build('drive', 'v3', credentials=self.credentials)
+
+        return self._thread_local.service
 
     def list_files(self, folder_id):
         """
@@ -71,6 +96,7 @@ class GoogleDriveService:
         if not self.authenticated:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
+        # Use main service for listing (not performance critical)
         query = f"'{folder_id}' in parents and trashed=false"
         results = self.service.files().list(
             q=query,
@@ -105,9 +131,12 @@ class GoogleDriveService:
             os.makedirs(destination_folder)
 
         try:
+            # Get thread-local service instance to avoid SSL conflicts
+            service = self._get_service()
+
             # Handle Google Workspace files (export as PDF)
             if mime_type.startswith('application/vnd.google-apps'):
-                request = self.service.files().export_media(
+                request = service.files().export_media(
                     fileId=file_id,
                     mimeType='application/pdf'
                 )
@@ -116,7 +145,7 @@ class GoogleDriveService:
                     file_name = os.path.splitext(file_name)[0] + '.pdf'
             else:
                 # Regular file download
-                request = self.service.files().get_media(fileId=file_id)
+                request = service.files().get_media(fileId=file_id)
 
             # Download file
             file_path = os.path.join(destination_folder, file_name)
@@ -124,8 +153,20 @@ class GoogleDriveService:
             downloader = MediaIoBaseDownload(fh, request)
 
             done = False
+            retry_count = 0
+            max_retries = 3
+
             while not done:
-                status, done = downloader.next_chunk()
+                try:
+                    status, done = downloader.next_chunk()
+                except Exception as chunk_error:
+                    # Retry on SSL or connection errors
+                    if retry_count < max_retries and ('SSL' in str(chunk_error) or 'Connection' in str(chunk_error)):
+                        retry_count += 1
+                        time.sleep(1 * retry_count)  # Exponential backoff
+                        continue
+                    else:
+                        raise chunk_error
 
             fh.close()
             return file_path
@@ -147,7 +188,9 @@ class GoogleDriveService:
         if not self.authenticated:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
-        return self.service.files().get(
+        # Use thread-local service for metadata requests too
+        service = self._get_service()
+        return service.files().get(
             fileId=file_id,
             fields="id, name, mimeType, size, createdTime, modifiedTime"
         ).execute()
