@@ -1,12 +1,10 @@
 """
 Command-line interface for prescription extraction
-Headless version for automation and scripting with parallel processing support
+Headless version for automation and scripting
 """
 import json
-import sys
 from .core.google_drive import GoogleDriveService
 from .core.claude_processor import ClaudeProcessor
-from .core.parallel_processor import ParallelProcessor, SequentialProcessor
 from .config.settings import Settings
 from .utils.file_handler import FileHandler
 from .utils.logger import setup_logger
@@ -15,40 +13,21 @@ from .utils.logger import setup_logger
 class CLIProcessor:
     """Command-line processor for prescription extraction"""
 
-    def __init__(
-        self,
-        folder_id=None,
-        output_file=None,
-        parallel=True,
-        workers=None,
-        resume=False,
-        checkpoint_file=None
-    ):
+    def __init__(self, folder_id=None, output_file=None):
         """
         Initialize CLI processor
 
         Args:
             folder_id (str): Google Drive folder ID
             output_file (str): Output JSON file path
-            parallel (bool): Enable parallel processing
-            workers (int): Number of parallel workers (None = use default)
-            resume (bool): Resume from checkpoint
-            checkpoint_file (str): Custom checkpoint file path
         """
         self.folder_id = folder_id or Settings.DEFAULT_FOLDER_ID
         self.output_file = output_file or Settings.OUTPUT_JSON_FILE
-        self.parallel = parallel
-        self.workers = workers or Settings.MAX_WORKERS
-        self.resume = resume
-        self.checkpoint_file = checkpoint_file or Settings.CHECKPOINT_FILE
         self.logger = setup_logger()
 
         # Services
         self.google_service = GoogleDriveService()
         self.claude_processor = ClaudeProcessor()
-
-        # Processor
-        self.processor = None
 
         # Statistics
         self.stats = {
@@ -80,75 +59,22 @@ class CLIProcessor:
             self.logger.info(f"Found {self.stats['total']} files\n")
 
             # Step 3: Process files
-            mode = "PARALLEL" if self.parallel else "SEQUENTIAL"
-            worker_info = f" (Workers: {self.workers})" if self.parallel else ""
-            self.logger.info(f"Step 3: Processing {self.stats['total']} files in {mode} mode{worker_info}")
-
-            if self.resume:
-                self.logger.info(f"✓ Resume mode enabled (checkpoint: {self.checkpoint_file})")
-
+            self.logger.info(f"Step 3: Processing {self.stats['total']} files...")
             self.logger.info("-" * 70 + "\n")
 
-            # Choose processor
-            if self.parallel:
-                self.processor = ParallelProcessor(
-                    google_service=self.google_service,
-                    claude_processor=self.claude_processor,
-                    max_workers=self.workers,
-                    checkpoint_file=self.checkpoint_file,
-                    enable_checkpointing=Settings.ENABLE_CHECKPOINTING,
-                    progress_callback=self._progress_callback
-                )
-            else:
-                self.processor = SequentialProcessor(
-                    google_service=self.google_service,
-                    claude_processor=self.claude_processor,
-                    progress_callback=self._progress_callback
-                )
+            # Initialize output file
+            FileHandler.write_json(self.output_file, [])
 
-            # Process files
-            final_stats = self.processor.process_files(files, self.output_file)
-
-            # Update our stats
-            self.stats.update(final_stats)
+            # Process each file
+            for idx, file in enumerate(files, 1):
+                self._process_single_file(file, idx, self.stats['total'])
 
             # Step 4: Display summary
             self._print_summary()
 
-            # Print cost estimate
-            if self.parallel:
-                print("\n" + "=" * 70)
-                print("COST ESTIMATE")
-                print("=" * 70)
-                cost_info = self.processor.get_cost_estimate()
-                for key, value in cost_info.items():
-                    print(f"{key.replace('_', ' ').title()}: {value}")
-                print("=" * 70)
-
-        except KeyboardInterrupt:
-            self.logger.warning("\nInterrupted by user")
-            if self.processor:
-                self.processor.cancel()
-            sys.exit(1)
         except Exception as e:
             self.logger.error(f"Fatal error: {str(e)}")
             raise
-
-    def _progress_callback(self, stats):
-        """
-        Callback for progress updates
-
-        Args:
-            stats (dict): Current statistics
-        """
-        # Print progress update
-        if stats['processed'] % 10 == 0 or stats['processed'] == stats['total']:
-            completion = stats.get('completion_percentage', 0)
-            throughput = stats.get('throughput', '0.00')
-            eta = stats.get('eta', 'Calculating...')
-
-            print(f"Progress: {stats['processed']}/{stats['total']} ({completion:.1f}%) | "
-                  f"Throughput: {throughput} files/min | ETA: {eta}")
 
     def _process_single_file(self, file, index, total):
         """Process a single file"""

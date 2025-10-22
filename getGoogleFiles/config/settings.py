@@ -31,6 +31,26 @@ class Settings:
     WINDOW_TITLE = "🏥 Prescription Extractor"
     WINDOW_SIZE = "900x700"
 
+    # Parallel Processing Configuration
+    ENABLE_PARALLEL = True           # Enable parallel processing by default
+    MAX_WORKERS = 10                 # Number of concurrent workers (threads)
+    MIN_WORKERS = 1                  # Minimum workers (sequential mode)
+    MAX_WORKERS_LIMIT = 50           # Maximum allowed workers
+
+    # Checkpoint Configuration
+    ENABLE_CHECKPOINTING = True      # Enable checkpoint/resume capability
+    CHECKPOINT_FILE = 'processing_checkpoint.json'
+    CHECKPOINT_BATCH_SIZE = 100      # Save checkpoint every N files
+
+    # Retry Configuration
+    RETRY_ATTEMPTS = 3               # Maximum retry attempts for failed operations
+    RETRY_BASE_DELAY = 1             # Initial retry delay in seconds
+    RETRY_MAX_DELAY = 60             # Maximum retry delay in seconds
+
+    # Rate Limiting Configuration
+    GOOGLE_DRIVE_RATE_LIMIT = 100    # Max requests per minute for Google Drive
+    CLAUDE_RATE_LIMIT = 50           # Max requests per minute for Claude API
+
     @classmethod
     def validate(cls):
         """Validate required settings"""
@@ -41,6 +61,13 @@ class Settings:
 
         if not os.path.exists(cls.CREDENTIALS_FILE):
             errors.append(f"{cls.CREDENTIALS_FILE} not found")
+
+        # Validate parallel processing settings
+        if cls.MAX_WORKERS < cls.MIN_WORKERS:
+            errors.append(f"MAX_WORKERS ({cls.MAX_WORKERS}) must be >= MIN_WORKERS ({cls.MIN_WORKERS})")
+
+        if cls.MAX_WORKERS > cls.MAX_WORKERS_LIMIT:
+            errors.append(f"MAX_WORKERS ({cls.MAX_WORKERS}) exceeds limit ({cls.MAX_WORKERS_LIMIT})")
 
         return errors
 

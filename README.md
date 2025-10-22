@@ -8,8 +8,11 @@ A modular Python application for downloading prescription PDFs from Google Drive
 - 🤖 **AI-Powered**: Uses Claude Sonnet 4.5 for intelligent document understanding
 - 📁 **Google Drive Integration**: Automatic file discovery and download
 - 🖥️ **Multiple Interfaces**: GUI and CLI modes
-- 📊 **Real-time Progress**: Track processing statistics
+- ⚡ **Parallel Processing**: Process 15,000+ files efficiently with concurrent workers
+- 💾 **Checkpoint/Resume**: Auto-save progress, resume from failures
+- 📊 **Real-time Progress**: Throughput, ETA, and cost tracking
 - 🔒 **Secure**: OAuth 2.0 authentication with credential management
+- 🛡️ **Rate Limit Aware**: Automatic backoff and retry logic
 
 ## Project Structure
 
@@ -100,7 +103,29 @@ This will verify:
 
 ## Usage
 
-### GUI Mode (Recommended for Interactive Use)
+### 🚀 Quick Start for Large Batches (15,000+ files)
+
+#### 1. Test First
+
+```bash
+# Test with 5 files using 2 workers
+python test_parallel.py --test-size 5 --workers 2
+```
+
+#### 2. Run Full Processing
+
+```bash
+# Recommended: 10 workers (~12 hours for 15,000 files)
+python main_cli.py --workers 10
+
+# Faster: 20 workers (~6 hours for 15,000 files)
+python main_cli.py --workers 20
+
+# Resume if interrupted
+python main_cli.py --resume --workers 10
+```
+
+### GUI Mode (Interactive)
 
 ```bash
 python main_gui.py
@@ -119,27 +144,40 @@ python main_gui.py
 3. View progress in real-time
 4. Results saved to `extracted_prescriptions.json`
 
-### CLI Mode (For Automation)
+### CLI Mode (Parallel Processing)
 
 ```bash
-# Use default folder
+# Default: 10 parallel workers
 python main_cli.py
 
-# Custom folder ID
-python main_cli.py --folder-id YOUR_FOLDER_ID
+# Custom workers (2-50)
+python main_cli.py --workers 20
+
+# Sequential mode (old behavior)
+python main_cli.py --sequential
+
+# Resume from checkpoint
+python main_cli.py --resume
+
+# Custom folder + workers
+python main_cli.py --folder-id YOUR_ID --workers 15
 
 # Custom output file
-python main_cli.py --output results.json
-
-# Both custom
-python main_cli.py --folder-id YOUR_FOLDER_ID --output my_data.json
+python main_cli.py --output results.json --workers 10
 ```
 
-**Perfect for:**
-- Scheduled jobs (cron)
-- CI/CD pipelines
-- Batch processing
-- Scripting
+**CLI Options:**
+- `--workers N` - Number of parallel workers (default: 10)
+- `--sequential` - Use sequential mode (1 file at a time)
+- `--resume` - Resume from checkpoint
+- `--checkpoint FILE` - Custom checkpoint file
+- `--folder-id ID` - Google Drive folder ID
+- `--output FILE` - Output JSON file
+
+**Performance:**
+- **Sequential**: 1 file at a time (~125 hours for 15,000 files)
+- **10 workers**: ~12.5 hours for 15,000 files (10x faster)
+- **20 workers**: ~6.25 hours for 15,000 files (20x faster)
 
 ## Finding Your Google Drive Folder ID
 
@@ -312,22 +350,35 @@ python main_cli.py --folder-id YOUR_FOLDER_ID
 
 ## Performance
 
-**Typical Processing Times:**
-- Authentication: 0-5 seconds (instant if cached)
-- File listing: 1-2 seconds per 100 files
-- Download: 0.5-3 seconds per PDF
-- Claude processing: 3-10 seconds per PDF
+### Processing Times
 
-**Cost (Anthropic API):**
-- ~$0.03 per prescription
-- ~$30 per 1000 prescriptions
+| Mode | Workers | 15,000 Files | 1,000 Files |
+|------|---------|--------------|-------------|
+| Sequential (old) | 1 | ~125 hours | ~8 hours |
+| Conservative | 5 | ~25 hours | ~1.6 hours |
+| **Recommended** | **10** | **~12.5 hours** | **~50 min** |
+| Aggressive | 20 | ~6.25 hours | ~25 min |
 
-See [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md#performance-metrics) for details.
+### Cost (Anthropic API)
+
+- **Per file**: ~$0.02-0.05
+- **1,000 files**: ~$20-50
+- **15,000 files**: ~$300-750
+
+**Test first to estimate costs:**
+```bash
+python test_parallel.py --test-size 10
+# Check cost estimate, multiply by (total_files / 10)
+```
+
+See [PARALLEL_PROCESSING_GUIDE.md](PARALLEL_PROCESSING_GUIDE.md) for detailed guidance.
 
 ## Documentation
 
 - **README.md** (this file): Quick start and usage
-- **TECHNICAL_DOCUMENTATION.md**: Architecture, API details, setup guides
+- **[PARALLEL_PROCESSING_GUIDE.md](PARALLEL_PROCESSING_GUIDE.md)**: Complete guide for large-scale processing
+- **[TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md)**: Architecture, API details, setup guides
+- **[QUICK_START.md](QUICK_START.md)**: Get started in 5 minutes
 - **Code comments**: Inline documentation in source files
 
 ## License
@@ -336,7 +387,18 @@ Private project - All rights reserved
 
 ## Changelog
 
-### v1.0.0 (2025-01-22)
+### v2.0.0 (2025-01-22) - Parallel Processing
+- ⚡ **MAJOR**: Added parallel processing with ThreadPoolExecutor
+- 💾 Added checkpoint/resume capability for crash recovery
+- 📊 Real-time progress tracking with throughput and ETA
+- 🛡️ Rate limiting with exponential backoff
+- 💰 Cost tracking and estimation
+- 🧪 Added `test_parallel.py` for testing before full runs
+- 📖 Created comprehensive [PARALLEL_PROCESSING_GUIDE.md](PARALLEL_PROCESSING_GUIDE.md)
+- 🔧 CLI now supports `--workers`, `--resume`, `--sequential` options
+- ⏱️ **Performance**: 10x faster (10 workers) - 15K files in ~12 hours vs ~125 hours
+
+### v1.0.0 (2025-01-22) - Modular Refactor
 - ✨ Refactored into modular package structure
 - 📦 New `getGoogleFiles` package with organized modules
 - 🎯 Separated GUI (`main_gui.py`) and CLI (`main_cli.py`) entry points
