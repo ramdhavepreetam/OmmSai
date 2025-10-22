@@ -1,23 +1,34 @@
 """
-DEPRECATED: This file is kept for backward compatibility only.
-Please use the new modular structure:
-  - GUI: python main_gui.py
-  - CLI: python main_cli.py
+Google Drive to Claude AI Document Processor
+Downloads prescription PDFs from Google Drive and extracts structured JSON using Claude AI
 
-This file now wraps the new modular implementation.
+Prerequisites:
+1. pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client anthropic
+2. Set up Google Drive API credentials (credentials.json)
+3. Set ANTHROPIC_API_KEY environment variable
 """
 
-from getGoogleFiles.cli import main as cli_main
-from getGoogleFiles.config.settings import Settings
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import os
+import pickle
+import io
+import json
+from anthropic import Anthropic
+import base64
+from pathlib import Path
 
-# Keep old constants for compatibility
-SCOPES = Settings.SCOPES
-FOLDER_ID = Settings.DEFAULT_FOLDER_ID
-DOWNLOAD_FOLDER = Settings.DOWNLOAD_FOLDER
-OUTPUT_JSON_FILE = Settings.OUTPUT_JSON_FILE
+# Configuration
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+FOLDER_ID = '15ZARfsIkva2O0ordMDZJJJZrj0WDLfLs'
+DOWNLOAD_FOLDER = 'downloads'
+OUTPUT_JSON_FILE = 'extracted_prescriptions.json'
 
-# Old extraction prompt (kept for reference)
-EXTRACTION_PROMPT_OLD = """You are a specialized medical document understanding system tasked with extracting structured data from doctor's prescription PDFs. These documents contain printed field labels and handwritten entries by healthcare providers.
+# Extraction prompt
+EXTRACTION_PROMPT = """You are a specialized medical document understanding system tasked with extracting structured data from doctor's prescription PDFs. These documents contain printed field labels and handwritten entries by healthcare providers.
 
 **Output Structure:**
 {
@@ -341,20 +352,16 @@ def process_all_files(service, folder_id, download_folder, output_json):
 
 
 def main():
-    """
-    Main function - Compatibility wrapper
-    NOTE: Use main_cli.py for new code
-    """
-    print("\n" + "=" * 60)
-    print("⚠ DEPRECATION WARNING")
-    print("=" * 60)
-    print("This file (CloudBackup.py) is deprecated.")
-    print("Please use the new entry points:")
-    print("  - CLI: python main_cli.py")
-    print("  - GUI: python main_gui.py")
-    print("=" * 60 + "\n")
+    """Main function"""
+    print("\n🏥 Doctor's Prescription Extraction System\n")
 
-    cli_main(folder_id=FOLDER_ID, output_file=OUTPUT_JSON_FILE)
+    # Authenticate with Google Drive
+    print("Authenticating with Google Drive...")
+    service = authenticate_google()
+    print("✓ Google Drive authentication successful!\n")
+
+    # Process all files
+    process_all_files(service, FOLDER_ID, DOWNLOAD_FOLDER, OUTPUT_JSON_FILE)
 
 
 if __name__ == '__main__':

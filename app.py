@@ -1,42 +1,37 @@
-from dotenv import load_dotenv
-import os
-from anthropic import Anthropic
+"""
+DEPRECATED: This file is kept for backward compatibility only.
+Please use: python test_api.py
 
-load_dotenv()
+This file now wraps the new modular implementation.
+"""
 
-api_key = os.getenv("ANTHROPIC_API_KEY")
-client = Anthropic(api_key=api_key)
+from getGoogleFiles.core.claude_processor import ClaudeProcessor
 
 
 def get_claude_response(prompt, model="claude-3-5-haiku-20241022", max_tokens=100):
+    """
+    Legacy function - use ClaudeProcessor class instead
+    """
+    processor = ClaudeProcessor()
+    return processor.simple_query(prompt, model, max_tokens)
+
+
+# Main execution
+if __name__ == '__main__':
+    print("\n" + "=" * 60)
+    print("⚠ DEPRECATION WARNING")
+    print("=" * 60)
+    print("This file (app.py) is deprecated.")
+    print("Please use: python test_api.py")
+    print("=" * 60 + "\n")
+
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=100,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return {
-            "success": True,
-            "text": response.content[0].text,
-            "usage": {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens
-
-            }
-        }
+        result = get_claude_response("What is the capital of India?")
+        if result["success"]:
+            print("Response:", result["text"])
+            print(f"\nTokens: {result['usage']['input_tokens']} input, "
+                  f"{result['usage']['output_tokens']} output")
+        else:
+            print("Error:", result["error"])
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-# Call AFTER function is defined
-try:
-    result = get_claude_response("What is the capital of India?")
-    if result["success"]:
-        print(result["text"])
-    else:
-        print("Error:", result["error"])
-except Exception as e:
-    print("Exception:", e)
+        print("Exception:", e)
