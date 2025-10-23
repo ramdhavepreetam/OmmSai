@@ -34,8 +34,8 @@ class ProgressTracker:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
 
-        # Thread safety
-        self.lock = threading.Lock()
+        # Thread safety (use RLock for reentrant locking to avoid deadlock)
+        self.lock = threading.RLock()
 
     def update(self, status='success', input_tokens=0, output_tokens=0):
         """
